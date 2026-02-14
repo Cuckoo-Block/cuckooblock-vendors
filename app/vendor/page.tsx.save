@@ -1,0 +1,514 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+
+type VendorForm = {
+  legal_name: string;
+  dba_name: string;
+  website: string;
+  primary_contact_name: string;
+  primary_contact_email: string;
+  primary_contact_phone: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  zip: string;
+  ap_email: string;
+  notes: string;
+};
+
+type VendorRow = VendorForm & {
+  id?: string;
+  owner_user_id?: string;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+const emptyForm: VendorForm = {
+  legal_name: "",
+  dba_name: "",
+  website: "",
+  primary_contact_name: "",
+  primary_contact_email: "",
+  primary_contact_phone: "",
+  address_line1: "",
+  address_line2: "",
+  city: "",
+  state: "",
+  zip: "",
+  ap_email: "",
+  notes: "",
+};
+
+function norm(s: string) {
+  return (s ?? "").trim();
+}
+
+export default function VendorPage() {
+  const router = useRouter();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [userId, setUserId] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+
+  const [statusMsg, setStatusMsg] = useState<string>("");
+  const [vendorStatus, setVendorStatus] = useState<string>("draft");
+
+  const [form, setForm] = useState<VendorForm>(emptyForm);
+
+  const requiredOk = useMemo(() => {
+    return (
+      norm(form.legal_name).length > 0 &&
+      norm(form.primary_contact_name).length > 0 &&
+      norm(form.primary_contact_email).length > 0
+    );
+  }, [form]);
+
+  const setField = (k: keyof VendorForm, v: string) => {
+    setForm((prev) => ({ ...prev, [k]: v }));
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
+  // Load session + load existing vendor row (by owner_user_id)
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setStatusMsg("");
+
+      const { data: sess, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) {
+        setStatusMsg(`Session error: ${sessErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const user = sess.session?.user;
+      if (!user?.id) {
+        router.push("/login");
+        return;
+      }
+
+      setUserId(user.id);
+      setEmail(user.email ?? "");
+
+      // Try to load vendor row for this user (owner_user_id = auth.uid())
+      const { data: row, error: loadErr } = await supabase
+        .from("vendors")
+        .select(
+          "legal_name,dba_name,website,primary_contact_name,primary_contact_email,primary_contact_phone,address_line1,address_line2,city,state,zip,ap_email,notes,status,updated_at,created_at,owner_user_id,id"
+        )
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+
+      // If table/RLS blocks select, show helpful message
+      if (loadErr) {
+        setStatusMsg(`Load error: ${loadErr.message}`);
+        setVendorStatus("draft");
+        setForm(emptyForm);
+        setLoading(false);
+        return;
+      }
+
+      if (row) {
+        setForm({
+          legal_name: row.legal_name ?? "",
+          dba_name: row.dba_name ?? "",
+          website: row.website ?? "",
+          primary_contact_name: row.primary_contact_name ?? "",
+          primary_contact_email: row.primary_contact_email ?? "",
+          primary_contact_phone: row.primary_contact_phone ?? "",
+          address_line1: row.address_line1 ?? "",
+          address_line2: row.address_line2 ?? "",
+          city: row.city ?? "",
+          state: row.state ?? "",
+          zip: row.zip ?? "",
+          ap_email: row.ap_email ?? "",
+          notes: row.notes ?? "",
+        });
+        setVendorStatus((row.status ?? "draft").toLowerCase());
+      } else {
+        setForm(emptyForm);
+        setVendorStatus("draft");
+      }
+
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const statusBadge = (s: string) => {
+    const v = (s ?? "draft").toLowerCase();
+    if (v === "approved")
+      return (
+        <Badge className="bg-emerald-500/20 text-emerald-200 border border-emerald-300/30">
+          Approved
+        </Badge>
+      );
+    if (v === "rejected")
+      return (
+        <Badge className="bg-red-500/20 text-red-200 border border-red-300/30">
+          Rejected
+        </Badge>
+      );
+    if (v === "needs_changes")
+      return (
+        <Badge className="bg-amber-500/20 text-amber-200 border border-amber-300/30">
+          Needs changes
+        </Badge>
+      );
+    if (v === "submitted")
+      return (
+        <Badge className="bg-sky-500/20 text-sky-200 border border-sky-300/30">
+          Submitted
+        </Badge>
+      );
+    return (
+      <Badge className="bg-white/10 text-white/80 border border-white/20">
+        Draft
+      </Badge>
+    );
+  };
+
+  /**
+   * IMPORTANT:
+   * This is the “Step 4” fix:
+   * - Always set owner_user_id = current user id
+   * - Upsert ON CONFLICT owner_user_id (requires UNIQUE constraint on owner_user_id)
+   */
+  const upsert = async (nextStatus: "draft" | "submitted") => {
+    setSaving(true);
+    setStatusMsg("");
+
+    const { data: sess, error: sessErr } = await supabase.auth.getSession();
+    if (sessErr) {
+      setStatusMsg(`Session error: ${sessErr.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const user = sess.session?.user;
+    if (!user?.id) {
+      setStatusMsg("Not logged in. Go to /login");
+      setSaving(false);
+      router.push("/login");
+      return;
+    }
+
+    if (nextStatus === "submitted" && !requiredOk) {
+      setStatusMsg("Please fill the required fields before submitting.");
+      setSaving(false);
+      return;
+    }
+
+    const payload: VendorRow = {
+      owner_user_id: user.id, // <- THIS FIXES the “wrong vendor row” issue
+      ...form,
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("vendors")
+      .upsert(payload, { onConflict: "owner_user_id" })
+      .select("status")
+      .single();
+
+    if (error) {
+      setStatusMsg(`Save error: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const newStatus = (data?.status ?? nextStatus).toLowerCase();
+    setVendorStatus(newStatus);
+    setStatusMsg(nextStatus === "submitted" ? "Submitted for review." : "Draft saved.");
+    setSaving(false);
+  };
+
+  return (
+    <main className="min-h-screen bg-[var(--cb-bg)] text-white px-4 py-10">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div className="text-2xl font-bold tracking-wide">Vendor Intake</div>
+            <div className="text-white/70 text-sm mt-1">
+              Logged in as: <span className="text-white/90">{email || "…"}</span>
+            </div>
+            <div className="text-white/70 text-sm mt-1 flex items-center gap-2">
+              Status: {statusBadge(vendorStatus)}
+            </div>
+          </div>
+
+          <Button
+            onClick={signOut}
+            className="bg-white/10 border border-white/20 hover:bg-white/15 text-white"
+            type="button"
+          >
+            Sign out
+          </Button>
+        </div>
+
+        <Card className="bg-[var(--cb-panel)] border border-[var(--cb-border)] shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-white">Vendor information</CardTitle>
+            <CardDescription className="text-white/70">
+              Required: Legal name, Primary contact name, Primary contact email.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-6">
+            {loading ? (
+              <div className="text-white/60">Loading…</div>
+            ) : (
+              <>
+                {/* Row 1 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="legal_name">
+                      Legal name <span className="text-red-200">*</span>
+                    </Label>
+                    <Input
+                      id="legal_name"
+                      className="cb-input"
+                      value={form.legal_name}
+                      onChange={(e) => setField("legal_name", e.target.value)}
+                      placeholder="Company, Inc."
+                      autoComplete="organization"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="dba_name">
+                      DBA name
+                    </Label>
+                    <Input
+                      id="dba_name"
+                      className="cb-input"
+                      value={form.dba_name}
+                      onChange={(e) => setField("dba_name", e.target.value)}
+                      placeholder="Doing Business As"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 2 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="website">
+                      Website
+                    </Label>
+                    <Input
+                      id="website"
+                      className="cb-input"
+                      value={form.website}
+                      onChange={(e) => setField("website", e.target.value)}
+                      placeholder="https://example.com"
+                      inputMode="url"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="ap_email">
+                      AP / Billing email
+                    </Label>
+                    <Input
+                      id="ap_email"
+                      className="cb-input"
+                      value={form.ap_email}
+                      onChange={(e) => setField("ap_email", e.target.value)}
+                      placeholder="ap@company.com"
+                      inputMode="email"
+                    />
+                  </div>
+                </div>
+
+                {/* Primary Contact */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="primary_contact_name">
+                      Primary contact name <span className="text-red-200">*</span>
+                    </Label>
+                    <Input
+                      id="primary_contact_name"
+                      className="cb-input"
+                      value={form.primary_contact_name}
+                      onChange={(e) => setField("primary_contact_name", e.target.value)}
+                      placeholder="Full name"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="primary_contact_email">
+                      Primary contact email <span className="text-red-200">*</span>
+                    </Label>
+                    <Input
+                      id="primary_contact_email"
+                      className="cb-input"
+                      value={form.primary_contact_email}
+                      onChange={(e) => setField("primary_contact_email", e.target.value)}
+                      placeholder="name@company.com"
+                      inputMode="email"
+                      autoComplete="email"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="primary_contact_phone">
+                      Primary contact phone
+                    </Label>
+                    <Input
+                      id="primary_contact_phone"
+                      className="cb-input"
+                      value={form.primary_contact_phone}
+                      onChange={(e) => setField("primary_contact_phone", e.target.value)}
+                      placeholder="+1 (555) 555-5555"
+                      inputMode="tel"
+                      autoComplete="tel"
+                    />
+                  </div>
+                </div>
+
+                {/* Address */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="address_line1">
+                      Address line 1
+                    </Label>
+                    <Input
+                      id="address_line1"
+                      className="cb-input"
+                      value={form.address_line1}
+                      onChange={(e) => setField("address_line1", e.target.value)}
+                      placeholder="123 Main St"
+                      autoComplete="address-line1"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="address_line2">
+                      Address line 2
+                    </Label>
+                    <Input
+                      id="address_line2"
+                      className="cb-input"
+                      value={form.address_line2}
+                      onChange={(e) => setField("address_line2", e.target.value)}
+                      placeholder="Suite / Unit"
+                      autoComplete="address-line2"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="city">
+                      City
+                    </Label>
+                    <Input
+                      id="city"
+                      className="cb-input"
+                      value={form.city}
+                      onChange={(e) => setField("city", e.target.value)}
+                      placeholder="City"
+                      autoComplete="address-level2"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="state">
+                      State
+                    </Label>
+                    <Input
+                      id="state"
+                      className="cb-input"
+                      value={form.state}
+                      onChange={(e) => setField("state", e.target.value)}
+                      placeholder="State"
+                      autoComplete="address-level1"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white/80" htmlFor="zip">
+                      ZIP
+                    </Label>
+                    <Input
+                      id="zip"
+                      className="cb-input"
+                      value={form.zip}
+                      onChange={(e) => setField("zip", e.target.value)}
+                      placeholder="ZIP"
+                      autoComplete="postal-code"
+                      inputMode="numeric"
+                    />
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <Label className="text-white/80" htmlFor="notes">
+                    Notes
+                  </Label>
+                  <Textarea
+                    id="notes"
+                    className="cb-input min-h-[110px]"
+                    value={form.notes}
+                    onChange={(e) => setField("notes", e.target.value)}
+                    placeholder="Anything we should know (lead time, certifications, payment terms, etc.)"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <Button
+                    className="w-full sm:w-auto bg-[var(--cb-input-bg)] text-black border border-black/10 hover:bg-[var(--cb-input-bg)]/90"
+                    onClick={() => upsert("draft")}
+                    disabled={saving}
+                    type="button"
+                  >
+                    {saving ? "Saving..." : "Save draft"}
+                  </Button>
+
+                  <Button
+                    className="w-full sm:w-auto bg-[var(--cb-input-bg)] text-black border border-black/10 hover:bg-[var(--cb-input-bg)]/90"
+                    onClick={() => upsert("submitted")}
+                    disabled={saving || !requiredOk}
+                    type="button"
+                  >
+                    {saving ? "Submitting..." : "Submit for review"}
+                  </Button>
+
+                  <div className="sm:ml-auto text-xs text-white/50 flex items-center">
+                    Owner ID:
+                    <span className="ml-1 break-all text-white/60">{userId}</span>
+                  </div>
+                </div>
+
+                {statusMsg ? (
+                  <div className="text-sm text-white/80">{statusMsg}</div>
+                ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  );
+}
+

@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global base styling for the brand */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: #01121f;
+  color: #ffffff;
+}
+
+/* Make form fields obvious and readable */
+@layer components {
+  .cb-input {
+    @apply w-full rounded-md border border-white/25 bg-[#E6E8EB] text-black placeholder:text-black/50 px-3 py-2
+      focus:outline-none focus:ring-2 focus:ring-white/70 focus:border-white/70;
+  }
+
+  .cb-label {
+    @apply text-white/80 text-sm;
+  }
+}
+
