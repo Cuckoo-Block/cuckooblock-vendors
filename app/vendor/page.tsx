@@ -94,6 +94,11 @@ export default function VendorPage() {
     }
   };
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center text-white">
@@ -105,6 +110,18 @@ export default function VendorPage() {
   return (
     <main className="min-h-screen flex justify-center px-4 py-10 bg-[var(--cb-bg)] text-white">
       <div className="w-full max-w-3xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-white/70 text-sm break-all">
+            Logged in as: <span className="text-white">{vendorId}</span>
+          </div>
+          <Button
+            className="bg-gray-200 text-black hover:bg-gray-300"
+            onClick={signOut}
+          >
+            Sign out
+          </Button>
+        </div>
+
         <Card className="bg-[var(--cb-panel)] border border-[var(--cb-border)]">
           <CardHeader>
             <CardTitle>Vendor Intake</CardTitle>
@@ -114,11 +131,10 @@ export default function VendorPage() {
           </CardHeader>
 
           <CardContent className="space-y-6">
-
             <div>
               <Label>Legal Name</Label>
               <Input
-                className="bg-gray-200 text-black"
+                className="bg-gray-200 text-black focus:ring-2 focus:ring-white"
                 value={form.legal_name}
                 onChange={(e) => setForm({ ...form, legal_name: e.target.value })}
               />
@@ -127,7 +143,7 @@ export default function VendorPage() {
             <div>
               <Label>DBA Name</Label>
               <Input
-                className="bg-gray-200 text-black"
+                className="bg-gray-200 text-black focus:ring-2 focus:ring-white"
                 value={form.dba_name}
                 onChange={(e) => setForm({ ...form, dba_name: e.target.value })}
               />
@@ -136,7 +152,7 @@ export default function VendorPage() {
             <div>
               <Label>Website</Label>
               <Input
-                className="bg-gray-200 text-black"
+                className="bg-gray-200 text-black focus:ring-2 focus:ring-white"
                 value={form.website}
                 onChange={(e) => setForm({ ...form, website: e.target.value })}
               />
@@ -145,31 +161,35 @@ export default function VendorPage() {
             <div>
               <Label>Primary Contact Name</Label>
               <Input
-                className="bg-gray-200 text-black"
+                className="bg-gray-200 text-black focus:ring-2 focus:ring-white"
                 value={form.primary_contact_name}
-                onChange={(e) => setForm({ ...form, primary_contact_name: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, primary_contact_name: e.target.value })
+                }
               />
             </div>
 
             <div>
               <Label>Primary Contact Email</Label>
               <Input
-                className="bg-gray-200 text-black"
+                className="bg-gray-200 text-black focus:ring-2 focus:ring-white"
                 value={form.primary_contact_email}
-                onChange={(e) => setForm({ ...form, primary_contact_email: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, primary_contact_email: e.target.value })
+                }
               />
             </div>
 
             <div>
               <Label>Notes</Label>
               <Textarea
-                className="bg-gray-200 text-black"
+                className="bg-gray-200 text-black focus:ring-2 focus:ring-white"
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </div>
 
-            <div className="flex gap-4 pt-4">
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <Button
                 className="bg-gray-200 text-black hover:bg-gray-300"
                 onClick={() => upsert("draft")}
@@ -186,7 +206,6 @@ export default function VendorPage() {
                 {saving ? "Submitting..." : "Submit for Review"}
               </Button>
             </div>
-
           </CardContent>
         </Card>
       </div>
