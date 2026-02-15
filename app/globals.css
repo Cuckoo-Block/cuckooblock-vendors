@@ -2,52 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* === GLOBAL BRAND THEME === */
+
 :root {
   --cb-bg: #01121f;
   --cb-fg: #ffffff;
+  --cb-panel: rgba(255,255,255,0.06);
+  --cb-border: rgba(255,255,255,0.18);
+  --cb-border-strong: rgba(255,255,255,0.45);
 
-  --cb-panel: rgba(255, 255, 255, 0.06);
-  --cb-border: rgba(255, 255, 255, 0.18);
-  --cb-border-strong: rgba(255, 255, 255, 0.55);
-
-  --cb-input-bg: #e6e7ea;
+  --cb-input-bg: #f1f1f1;
   --cb-input-fg: #0b0f14;
 }
 
-html, body { height: 100%; }
+html,
+body {
+  height: 100%;
+}
 
 body {
-  background: var(--cb-bg);
+  background-color: var(--cb-bg);
   color: var(--cb-fg);
 }
 
-.font-saira {
-  font-family: "Saira", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
-}
-
-.cb-input {
-  background: var(--cb-input-bg) !important;
+/* Fix invisible inputs in production */
+input,
+textarea,
+select {
+  background-color: var(--cb-input-bg) !important;
   color: var(--cb-input-fg) !important;
   border: 1px solid var(--cb-border-strong) !important;
 }
 
-.cb-input:focus {
-  outline: none !important;
-  border-color: rgba(255,255,255,0.95) !important;
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.22) !important;
-}
-.cb-input {
-  background: var(--cb-input-bg) !important;
-  color: var(--cb-input-fg) !important;
-  border: 2px solid rgba(255,255,255,0.55) !important;
-}
-
-.cb-input::placeholder {
-  color: rgba(0,0,0,0.55) !important;
-}
-
-.cb-input-focus:focus {
-  outline: none !important;
-  box-shadow: 0 0 0 4px rgba(255,255,255,0.22) !important;
-  border-color: rgba(255,255,255,0.85) !important;
+/* Buttons default readable */
+button {
+  color: black;
 }
